@@ -18,15 +18,15 @@ package com.android.example.cameraxbasic.utils
 
 import android.content.Context
 import android.graphics.Matrix
+import android.graphics.SurfaceTexture
 import android.hardware.display.DisplayManager
+import android.util.Log
 import android.util.Size
-import android.view.Display
-import android.view.Surface
-import android.view.TextureView
-import android.view.View
-import android.view.ViewGroup
+import android.view.*
 import androidx.camera.core.Preview
 import androidx.camera.core.PreviewConfig
+import com.android.example.cameraxbasic.fragments.Renderer
+import com.android.example.cameraxbasic.fragments.TextureDrawer
 import java.lang.IllegalArgumentException
 import java.lang.ref.WeakReference
 import java.util.Objects
@@ -67,6 +67,9 @@ class AutoFitPreviewBuilder private constructor(config: PreviewConfig,
         }
     }
 
+    private var mOESTextureId = -1
+    private var mRenderer: Renderer = Renderer()
+
     init {
         // Make sure that the view finder reference is valid
         val viewFinder = viewFinderRef.get() ?: throw IllegalArgumentException(
@@ -79,6 +82,7 @@ class AutoFitPreviewBuilder private constructor(config: PreviewConfig,
         // Initialize public use-case with the given config
         useCase = Preview(config)
 
+
         // Every time the view finder is updated, recompute layout
         useCase.onPreviewOutputUpdateListener = Preview.OnPreviewOutputUpdateListener {
             val viewFinder =
@@ -89,7 +93,31 @@ class AutoFitPreviewBuilder private constructor(config: PreviewConfig,
             parent.removeView(viewFinder)
             parent.addView(viewFinder, 0)
 
-            viewFinder.surfaceTexture = it.surfaceTexture
+            Log.d("zhy", "OnPreviewOutputUpdateListener")
+
+            // 启用下面的代码正常显示内容
+            // viewFinder.surfaceTexture = it.surfaceTexture
+
+            // 启用下面的代码，走 GL 线程，图像经过黑白滤镜处理
+            viewFinder.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+
+                override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture?, width: Int, height: Int) {
+                }
+
+                override fun onSurfaceTextureUpdated(surface: SurfaceTexture?) {
+                }
+
+                override fun onSurfaceTextureDestroyed(surface: SurfaceTexture?): Boolean {
+                    return true
+                }
+
+                override fun onSurfaceTextureAvailable(surface: SurfaceTexture?, width: Int, height: Int) {
+                    mOESTextureId = TextureDrawer.createOESTextureObject()
+                    mRenderer.init(viewFinder, mOESTextureId)
+                    mRenderer.initOESTexture(it.surfaceTexture)
+                }
+            }
+
             bufferRotation = it.rotationDegrees
             val rotation = getDisplaySurfaceRotation(viewFinder.display)
             updateTransform(viewFinder, rotation, it.textureSize, viewFinderDimens)
@@ -194,7 +222,7 @@ class AutoFitPreviewBuilder private constructor(config: PreviewConfig,
 
     companion object {
         /** Helper function that gets the rotation of a [Display] in degrees */
-        fun getDisplaySurfaceRotation(display: Display?) = when(display?.rotation) {
+        fun getDisplaySurfaceRotation(display: Display?) = when (display?.rotation) {
             Surface.ROTATION_0 -> 0
             Surface.ROTATION_90 -> 90
             Surface.ROTATION_180 -> 180
